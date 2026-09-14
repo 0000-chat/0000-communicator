@@ -10,6 +10,11 @@ import {
 } from "@communicator/contracts";
 import { canonicalJsonStringify } from "../archive/canonical-json";
 import { sha256Hex } from "../archive/codec";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type HistoryImportProviderOwner = {
   tenant_id: string;
@@ -221,7 +226,7 @@ export class HttpHistoryImportProvider implements HistoryImportProvider {
   constructor(
     baseUrl: string,
     private readonly sharedSecret: string,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     if (!baseUrl || sharedSecret.length < 16)
       throw new HistoryProviderError("runtime_unavailable");
@@ -308,8 +313,15 @@ export const historyProviderFromEnv = (
     CONNECTION_GATEWAY_URL?: string;
     CONNECTION_GATEWAY_TOKEN?: string;
   };
-  return new HttpHistoryImportProvider(
-    runtimeEnv.CONNECTION_GATEWAY_URL ?? "",
-    runtimeEnv.CONNECTION_GATEWAY_TOKEN ?? "",
-  );
+  try {
+    return new HttpHistoryImportProvider(
+      runtimeEnv.CONNECTION_GATEWAY_URL ?? "",
+      runtimeEnv.CONNECTION_GATEWAY_TOKEN ?? "",
+      gatewayFetchFromEnv(env),
+    );
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError)
+      throw new HistoryProviderError("runtime_unavailable");
+    throw error;
+  }
 };

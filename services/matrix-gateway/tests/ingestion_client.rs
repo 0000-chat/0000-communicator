@@ -155,7 +155,7 @@ async fn oauth_basic_auth_uses_form_encoding_without_secret_in_body() {
             );
             ResponseTemplate::new(200).set_body_raw(
                 format!(
-                    "{{\"access_token\":\"{TOKEN_CANARY}\",\"token_type\":\"Bearer\",\"expires_in\":300}}"
+                    "{{\"access_token\":\"{TOKEN_CANARY}\",\"token_type\":\"Bearer\",\"expires_in\":300,\"scope\":\"ingestion\",\"provider_extension\":{{\"regional\":true}}}}"
                 ),
                 "application/json",
             )

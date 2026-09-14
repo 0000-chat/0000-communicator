@@ -11,6 +11,11 @@ import type {
   OutboundAdapterEvidence,
   OutboundAdapterResult,
 } from "./acceptance";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 import { z } from "zod";
 
 const runtimeEnvironment = (env: Cloudflare.Env) =>
@@ -162,7 +167,7 @@ export class HttpWhatsAppTextAdapter {
 
   constructor(
     private readonly context: OutboundAcceptanceContext,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     const env = runtimeEnvironment(context.env);
     this.baseUrl = (env.CONNECTION_GATEWAY_URL ?? "").replace(/\/$/, "");
@@ -440,7 +445,7 @@ export class HttpWhatsAppTextAdapter {
 
 export const defaultWhatsAppTextAdapter = (
   context: OutboundAcceptanceContext,
-  fetcher: typeof fetch = globalThis.fetch,
+  fetcher?: GatewayFetch,
 ): HttpWhatsAppTextAdapter | undefined => {
   const env = runtimeEnvironment(context.env);
   if (
@@ -451,5 +456,15 @@ export const defaultWhatsAppTextAdapter = (
   ) {
     return undefined;
   }
-  return new HttpWhatsAppTextAdapter(context, fetcher);
+  if (fetcher !== undefined)
+    return new HttpWhatsAppTextAdapter(context, fetcher);
+  try {
+    return new HttpWhatsAppTextAdapter(
+      context,
+      gatewayFetchFromEnv(context.env),
+    );
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError) return undefined;
+    throw error;
+  }
 };

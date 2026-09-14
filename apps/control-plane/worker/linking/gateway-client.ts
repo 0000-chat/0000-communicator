@@ -1,4 +1,9 @@
 import { ProviderSchema, type Provider } from "@communicator/contracts";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type GatewayOwner = {
   session_id: string;
@@ -258,7 +263,7 @@ export class HttpConnectionGateway implements ConnectionGateway {
   constructor(
     baseUrl: string,
     private readonly sharedSecret: string,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     if (!baseUrl || sharedSecret.length < 16)
       throw new ConnectionGatewayError("provider_unavailable");
@@ -409,8 +414,15 @@ export const gatewayFromEnv = (env: Cloudflare.Env): ConnectionGateway => {
     CONNECTION_GATEWAY_URL?: string;
     CONNECTION_GATEWAY_TOKEN?: string;
   };
-  return new HttpConnectionGateway(
-    runtimeEnv.CONNECTION_GATEWAY_URL ?? "",
-    runtimeEnv.CONNECTION_GATEWAY_TOKEN ?? "",
-  );
+  try {
+    return new HttpConnectionGateway(
+      runtimeEnv.CONNECTION_GATEWAY_URL ?? "",
+      runtimeEnv.CONNECTION_GATEWAY_TOKEN ?? "",
+      gatewayFetchFromEnv(env),
+    );
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError)
+      throw new ConnectionGatewayError("provider_unavailable");
+    throw error;
+  }
 };

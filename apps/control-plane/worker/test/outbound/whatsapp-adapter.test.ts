@@ -5,7 +5,10 @@ import {
   type SessionResponse,
 } from "@communicator/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpWhatsAppTextAdapter } from "../../outbound/whatsapp-adapter";
+import {
+  defaultWhatsAppTextAdapter,
+  HttpWhatsAppTextAdapter,
+} from "../../outbound/whatsapp-adapter";
 import type { OutboundAcceptanceContext } from "../../outbound/acceptance";
 import {
   clearDirectory,
@@ -92,11 +95,12 @@ const dispatch = OutboundDispatchSchema.parse({
   updated_at: payload.created_at,
 });
 
-const context = (): OutboundAcceptanceContext => ({
+const context = (binding?: unknown): OutboundAcceptanceContext => ({
   env: {
     ...runtimeEnv,
     CONNECTION_GATEWAY_URL: gatewayUrl,
     CONNECTION_GATEWAY_TOKEN: "adapter-test-secret-123",
+    ...(binding === undefined ? {} : { CONNECTION_GATEWAY_VPC: binding }),
   } as Cloudflare.Env,
   authorization: session,
 });
@@ -155,6 +159,65 @@ async function seedAdapterDirectory() {
 
 describe("HttpWhatsAppTextAdapter", () => {
   beforeEach(seedAdapterDirectory);
+
+  it.each([
+    ["missing", undefined],
+    ["malformed", { fetch: "not-a-function" }],
+  ] as const)(
+    "does not construct a default adapter with %s binding",
+    (_label, binding) => {
+      const globalFetch = vi.fn();
+      vi.stubGlobal("fetch", globalFetch);
+      try {
+        expect(defaultWhatsAppTextAdapter(context(binding))).toBeUndefined();
+        expect(globalFetch).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("routes the default factory through the private binding", async () => {
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(input).toBe(`${gatewayUrl}/v1/outbound/text`);
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer adapter-test-secret-123",
+          "content-type": "application/json",
+        });
+        const requestBody = JSON.parse(String(init?.body)) as {
+          account_id: string;
+          connection_id: string;
+          transaction_id: string;
+          body: string;
+        };
+        expect(requestBody).toMatchObject({
+          account_id: payload.account_id,
+          connection_id: payload.connection_id,
+          transaction_id: payload.transaction_id,
+          body: payload.body,
+        });
+        return acceptedResponse();
+      },
+    );
+    type TestBinding = {
+      fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+    };
+    let binding!: TestBinding;
+    binding = {
+      async fetch(this: TestBinding, input, init) {
+        expect(this).toBe(binding);
+        return fetcher(input, init);
+      },
+    };
+
+    const adapter = defaultWhatsAppTextAdapter(context(binding));
+    expect(adapter).toBeDefined();
+    await expect(adapter!.dispatch(dispatch, payload)).resolves.toMatchObject({
+      type: "evidence_batch",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 
   it("routes one saved body to the selected account and preserves transaction idempotency", async () => {
     const requests: Request[] = [];

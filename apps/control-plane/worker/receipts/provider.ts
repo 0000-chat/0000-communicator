@@ -6,6 +6,11 @@ import {
   type OutboundCapability,
 } from "@communicator/contracts";
 import { z } from "zod";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type ReceiptRoute = {
   tenant_id: string;
@@ -105,7 +110,7 @@ export class HttpWhatsAppReceiptProvider implements ReceiptProvider {
 
   constructor(
     env: Cloudflare.Env,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     const runtime = runtimeEnvironment(env);
     this.baseUrl = (runtime.CONNECTION_GATEWAY_URL ?? "").replace(/\/$/u, "");
@@ -173,4 +178,17 @@ export class HttpWhatsAppReceiptProvider implements ReceiptProvider {
 
 export const defaultWhatsAppReceiptProvider = (
   env: Cloudflare.Env,
-): ReceiptProvider => new HttpWhatsAppReceiptProvider(env);
+): ReceiptProvider => {
+  try {
+    return new HttpWhatsAppReceiptProvider(env, gatewayFetchFromEnv(env));
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError) {
+      return {
+        dispatch: async () => {
+          throw new ReceiptProviderError("unavailable");
+        },
+      };
+    }
+    throw error;
+  }
+};

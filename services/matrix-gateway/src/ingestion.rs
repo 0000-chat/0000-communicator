@@ -638,7 +638,6 @@ impl BatchSink for IngestionClient {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct OAuthResponse {
     #[serde(deserialize_with = "deserialize_zeroizing_string")]
     access_token: Zeroizing<String>,

@@ -8,6 +8,11 @@ import {
 import type { OutboundCapability } from "@communicator/contracts";
 import { z } from "zod";
 import type { ContactRoute } from "../contacts/provider";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type GroupProviderInput = {
   route: ContactRoute;
@@ -296,7 +301,7 @@ export class HttpGroupProvider implements GroupProvider {
 
   constructor(
     env: Cloudflare.Env,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     const runtime = runtimeEnvironment(env);
     this.baseUrl = (runtime.CONNECTION_GATEWAY_URL ?? "").replace(/\/$/u, "");
@@ -528,5 +533,26 @@ export class HttpGroupProvider implements GroupProvider {
   }
 }
 
-export const defaultGroupProvider = (env: Cloudflare.Env): GroupProvider =>
-  new HttpGroupProvider(env);
+const unavailableGroupOperation = async (): Promise<never> => {
+  throw new GroupProviderError("unavailable");
+};
+
+export const defaultGroupProvider = (env: Cloudflare.Env): GroupProvider => {
+  try {
+    return new HttpGroupProvider(env, gatewayFetchFromEnv(env));
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError) {
+      return {
+        createGroup: unavailableGroupOperation,
+        observeGroup: unavailableGroupOperation,
+        refreshGroup: unavailableGroupOperation,
+        renameGroup: unavailableGroupOperation,
+        addGroupParticipants: unavailableGroupOperation,
+        removeGroupParticipants: unavailableGroupOperation,
+        observeManagedGroup: unavailableGroupOperation,
+        refreshManagedGroup: unavailableGroupOperation,
+      };
+    }
+    throw error;
+  }
+};

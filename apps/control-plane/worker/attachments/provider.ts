@@ -1,6 +1,11 @@
 import { MAX_ATTACHMENT_BYTES, type Provider } from "@communicator/contracts";
 import { canonicalJsonStringify } from "../archive/canonical-json";
 import { sha256Hex } from "../archive/codec";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type AttachmentProviderInput = {
   tenant_id: string;
@@ -168,7 +173,7 @@ export class HttpAttachmentProvider implements AttachmentProvider {
   constructor(
     baseUrl: string,
     private readonly sharedSecret: string,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     if (!baseUrl || sharedSecret.length < 16) {
       throw new AttachmentProviderError("runtime_unavailable");
@@ -238,9 +243,13 @@ export const attachmentProviderFromEnv = (
     return new HttpAttachmentProvider(
       runtimeEnv.CONNECTION_GATEWAY_URL ?? "",
       runtimeEnv.CONNECTION_GATEWAY_TOKEN ?? "",
+      gatewayFetchFromEnv(env),
     );
   } catch (error) {
-    if (error instanceof AttachmentProviderError) {
+    if (
+      error instanceof AttachmentProviderError ||
+      error instanceof GatewayTransportConfigError
+    ) {
       return {
         read: async () => ({
           status: "unavailable",

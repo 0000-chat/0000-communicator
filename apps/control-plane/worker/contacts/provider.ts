@@ -8,6 +8,11 @@ import {
 } from "@communicator/contracts";
 import { z } from "zod";
 import type { OutboundCapability } from "../outbound/authority-types";
+import {
+  gatewayFetchFromEnv,
+  GatewayTransportConfigError,
+  type GatewayFetch,
+} from "../gateway/private-fetch";
 
 export type ContactRoute = {
   tenant_id: string;
@@ -179,7 +184,7 @@ export class HttpContactProvider implements ContactProvider {
 
   constructor(
     env: Cloudflare.Env,
-    private readonly fetcher: typeof fetch = globalThis.fetch,
+    private readonly fetcher: GatewayFetch,
   ) {
     const runtime = runtimeEnvironment(env);
     this.baseUrl = (runtime.CONNECTION_GATEWAY_URL ?? "").replace(/\/$/u, "");
@@ -354,5 +359,23 @@ export class HttpContactProvider implements ContactProvider {
   }
 }
 
-export const defaultContactProvider = (env: Cloudflare.Env): ContactProvider =>
-  new HttpContactProvider(env);
+const unavailableContactOperation = async (): Promise<never> => {
+  throw new ContactProviderError("unavailable");
+};
+
+export const defaultContactProvider = (
+  env: Cloudflare.Env,
+): ContactProvider => {
+  try {
+    return new HttpContactProvider(env, gatewayFetchFromEnv(env));
+  } catch (error) {
+    if (error instanceof GatewayTransportConfigError) {
+      return {
+        search: unavailableContactOperation,
+        resolve: unavailableContactOperation,
+        createDirectChat: unavailableContactOperation,
+      };
+    }
+    throw error;
+  }
+};

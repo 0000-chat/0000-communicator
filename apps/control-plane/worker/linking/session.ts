@@ -24,6 +24,7 @@ import {
   markLifecycleReconciliation,
   type LifecycleActor,
 } from "./lifecycle-repository";
+import { gatewayFetchFromEnv } from "../gateway/private-fetch";
 
 const STATE_KEY = "link-session";
 const PRODUCT_TTL_MS = 10 * 60_000;
@@ -341,7 +342,7 @@ async function cancelGatewayReference(
   if (!state.gateway_ref || !runtimeEnv.CONNECTION_GATEWAY_URL) return;
   try {
     const requestId = crypto.randomUUID();
-    await fetch(
+    await gatewayFetchFromEnv(env)(
       `${runtimeEnv.CONNECTION_GATEWAY_URL}/v1/link-sessions/cancel`,
       {
         method: "POST",

@@ -385,40 +385,36 @@ describe("background history import runner", () => {
     const clock = makeClock();
     const provider = providerWith(async () => completedPage(), 1);
     const started = await startImport(provider, clock, "scheduler-exported");
-    const fetchMock = vi.fn(
+    const gatewayFetch = vi.fn(
       async () =>
         new Response(JSON.stringify(completedPage()), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
     );
-    vi.stubGlobal("fetch", fetchMock);
     const scheduledEnv = Object.assign(Object.create(workerEnv), {
       CONNECTION_GATEWAY_URL: "https://history-gateway.example",
       CONNECTION_GATEWAY_TOKEN: "history-scheduler-secret-123",
+      CONNECTION_GATEWAY_VPC: { fetch: gatewayFetch },
     }) as Cloudflare.Env;
     let scheduledPromise: Promise<unknown> | undefined;
 
-    try {
-      expect(worker.scheduled).toBeTypeOf("function");
-      worker.scheduled?.(
-        {
-          cron: "*/1 * * * *",
-          scheduledTime: Date.parse("2026-09-03T00:00:10.000Z"),
-          noRetry() {},
+    expect(worker.scheduled).toBeTypeOf("function");
+    worker.scheduled?.(
+      {
+        cron: "*/1 * * * *",
+        scheduledTime: Date.parse("2026-09-03T00:00:10.000Z"),
+        noRetry() {},
+      },
+      scheduledEnv,
+      {
+        waitUntil(promise: Promise<unknown>) {
+          scheduledPromise = promise;
         },
-        scheduledEnv,
-        {
-          waitUntil(promise: Promise<unknown>) {
-            scheduledPromise = promise;
-          },
-        } as unknown as ExecutionContext,
-      );
-      expect(scheduledPromise).toBeDefined();
-      await scheduledPromise;
-    } finally {
-      vi.unstubAllGlobals();
-    }
+      } as unknown as ExecutionContext,
+    );
+    expect(scheduledPromise).toBeDefined();
+    await scheduledPromise;
 
     const detail = await getDetail(
       workerEnv.CONTROL_DB,
@@ -426,7 +422,7 @@ describe("background history import runner", () => {
       started.detail.import.import_id,
       accountId,
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
     expect(detail.import.status).toBe("completed");
   });
 });
